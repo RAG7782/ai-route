@@ -1,0 +1,174 @@
+# AI Route - Configuração de Exemplo
+# Copie este arquivo para ~/.config/ai-route/config.yaml e edite conforme necessário
+
+# Agents disponíveis e suas configurações
+agents:
+  claude:
+    enabled: true
+    priority: 10
+    cost: "$$$"
+    speed: "medium"
+    strengths:
+      - architecture
+      - multi-file
+      - complex reasoning
+      - MCPs
+      - memory
+
+  aider-groq:
+    enabled: true
+    priority: 8
+    cost: "$"
+    speed: "fast"
+    strengths:
+      - quick code
+      - refactor simple
+      - single file
+      - git commits
+
+  aider-or:
+    enabled: true
+    priority: 7
+    cost: "$$"
+    speed: "medium"
+    strengths:
+      - complex refactor
+      - multi-file refactor
+      - deep code
+
+  opencode:
+    enabled: true
+    priority: 5
+    cost: "$"
+    speed: "medium"
+    strengths:
+      - explore codebase
+      - understand code
+      - free tier
+
+  gemini:
+    enabled: true
+    priority: 6
+    cost: "$"
+    speed: "fast"
+    strengths:
+      - large context
+      - explanation
+      - docs
+      - free tier
+
+  codex:
+    enabled: true
+    priority: 4
+    cost: "$$"
+    speed: "fast"
+    strengths:
+      - scaffolding
+      - prototype
+      - quick app
+
+  copilot:
+    enabled: true
+    priority: 9
+    cost: "$"
+    speed: "instant"
+    strengths:
+      - shell commands
+      - one-liners
+      - cli help
+
+  ollama:
+    enabled: true
+    priority: 3
+    cost: "0"
+    speed: "medium"
+    strengths:
+      - offline
+      - private
+      - general chat
+      - no internet
+
+# Regras de roteamento personalizadas
+# Cada regra tem: pattern, agent, score_boost, reason
+rules:
+  - pattern: "\\b(arquitetura|architecture|design|system)\\b"
+    agent: claude
+    score_boost: 30
+    reason: "architecture/design task"
+
+  - pattern: "\\b(fix|corrig|bug|error|typo)\\b"
+    agent: aider-groq
+    score_boost: 20
+    reason: "quick fix"
+
+  - pattern: "\\b(refator|refactor).*\\b(comple[xt]|inteiro)\\b"
+    agent: aider-or
+    score_boost: 25
+    reason: "complex refactor"
+
+  - pattern: "\\b(como|how|comando|command|shell)\\b.*\\b(listar|deletar|copiar|mover)\\b"
+    agent: copilot
+    score_boost: 30
+    reason: "shell command question"
+
+  - pattern: "\\b(expli[cq]|explain|entend|understand)\\b"
+    agent: gemini
+    score_boost: 20
+    reason: "explanation/understanding"
+
+  - pattern: "\\b(scaffold|boilerplate|starter|template)\\b"
+    agent: codex
+    score_boost: 25
+    reason: "scaffolding/prototype"
+
+  - pattern: "\\b(offline|privado|private|local)\\b"
+    agent: ollama
+    score_boost: 30
+    reason: "offline/privacy required"
+
+# Heurísticas de scoring
+heuristics:
+  short_query_threshold: 5  # palavras
+  short_query_boost: 10
+  short_query_target: copilot
+
+  long_query_threshold: 30  # palavras
+  long_query_boost: 10
+  long_query_target: claude
+
+  file_extensions:
+    - py
+    - js
+    - ts
+    - tsx
+    - jsx
+    - rs
+    - go
+    - java
+    - rb
+    - cpp
+    - c
+    - h
+  file_reference_boost: 15
+  file_reference_target: aider-groq
+
+  default_agent: aider-groq
+  default_boost: 5
+
+# Configurações de saída
+output:
+  show_scoring: true
+  show_reasons: true
+  max_ranked: 4
+  color_enabled: true
+
+# Histórico
+history:
+  enabled: false
+  max_entries: 100
+  file: ~/.config/ai-route/history.json
+
+# Feedback learning
+feedback:
+  enabled: false
+  file: ~/.config/ai-route/feedback.json

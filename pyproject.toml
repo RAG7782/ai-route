@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-route"
+version = "0.1.0"
+description = "Roteador Inteligente de CLI Agents — Nunca mais escolha qual ferramenta usar"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "AI Route Contributors", email = "contributor@example.com"}
+]
+keywords = ["cli", "ai", "routing", "agents", "claude", "aider", "gemini"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage = "https://github.com/seu-usuario/ai-route"
+Documentation = "https://github.com/seu-usuario/ai-route#readme"
+Repository = "https://github.com/seu-usuario/ai-route"
+Issues = "https://github.com/seu-usuario/ai-route/issues"
+
+[project.scripts]
+ai-route = "ai_route:main"
+
+[tool.setuptools]
+packages = ["ai_route"]
+
+[tool.setuptools.package-data]
+ai_route = ["*.yaml"]
