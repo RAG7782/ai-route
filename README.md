@@ -64,7 +64,7 @@ Você tem **8+ CLI agents** instalados no seu sistema:
 
 ```bash
 # Clone o repo
-git clone https://github.com/seu-usuario/ai-route.git
+git clone https://github.com/RAG7782/ai-route.git
 cd ai-route
 
 # Copie o script para seu PATH
@@ -347,7 +347,7 @@ Contribuições são bem-vindas! Áreas para melhorar:
 ### Setup de Desenvolvimento
 
 ```bash
-git clone https://github.com/seu-usuario/ai-route.git
+git clone https://github.com/RAG7782/ai-route.git
 cd ai-route
 
 # Teste local
@@ -377,6 +377,6 @@ MIT License — veja [LICENSE](LICENSE) para detalhes.
 
 **Feito com ❤️ para desenvolvedores que usam muitas ferramentas**
 
-[⭐ Star no GitHub](https://github.com/seu-usuario/ai-route) · [🐛 Reportar Bug](https://github.com/seu-usuario/ai-route/issues) · [💡 Sugerir Feature](https://github.com/seu-usuario/ai-route/issues)
+[⭐ Star no GitHub](https://github.com/RAG7782/ai-route) · [🐛 Reportar Bug](https://github.com/RAG7782/ai-route/issues) · [💡 Sugerir Feature](https://github.com/RAG7782/ai-route/issues)
 
 </div>
