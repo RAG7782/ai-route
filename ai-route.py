@@ -54,8 +54,8 @@ AGENTS = {
         "tier": "free",
         "cost": "$",
         "speed": "medium",
-        "strengths": ["explore codebase", "understand code", "free tier"],
-        "desc": "OpenCode — free tier, exploração de código",
+        "strengths": ["explore codebase", "understand code", "free tier", "multi-model", "auto-routing", "code generation", "refactor"],
+        "desc": "OpenCode — 358+ modelos via OmniRoute/Nvidia/Ollama, auto-routing por query",
     },
     "gemini": {
         "cmd": ["gemini"],
