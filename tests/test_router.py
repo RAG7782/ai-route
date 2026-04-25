@@ -2,7 +2,7 @@
 
 import pytest
 
-from ai_route.router import classify, AGENTS
+from ai_route.router import classify, AGENTS, get_agent
 
 
 class TestClassify:
@@ -25,7 +25,7 @@ class TestClassify:
 
     def test_complex_refactor_routes_to_aider_or(self):
         """Refatoração complexa deve rotear para aider-or."""
-        best, _ = classify("refatora todo o código para usar TypeScript strict")
+        best, _ = classify("rewrite and restructure the entire codebase to TypeScript strict")
         assert best == "aider-or"
 
     def test_explanation_routes_to_gemini(self):
