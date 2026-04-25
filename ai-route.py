@@ -5,16 +5,27 @@ Classifica a query e roteia para o CLI agent mais adequado.
 
 Uso:
   ai-route "sua pergunta ou tarefa"
-  ai-route --dry "query"          # mostra qual agent usaria sem executar
-  ai-route --list                 # lista agents disponíveis
-  ai-route --cost                 # mostra custo estimado por agent
+  ai-route --dry "query"                  # mostra qual agent usaria sem executar
+  ai-route --smart "query"                # usa LLM (Groq) para classificar
+  ai-route --smart --dry "query"          # combina smart + dry run
+  ai-route --local "query"                # usa classificador local (Ollama) v3
+  ai-route --list                         # lista agents disponíveis
+  ai-route --cost                         # mostra custo estimado por agent
+  ai-route --feedback good [--query "q"]  # registra feedback para learning loop (v2)
+  ai-route --feedback bad [--query "q"]   # registra feedback negativo
+  ai-route --train                        # exporta training data para fine-tune (v3)
+  ai-route --stats                        # mostra estatísticas de routing
 """
 
 import sys
 import os
 import re
+import json
 import subprocess
 import shutil
+from pathlib import Path
+from datetime import datetime, timezone
+from openai import OpenAI
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # AGENT REGISTRY
@@ -185,6 +196,290 @@ def classify(query: str) -> tuple[str, list[tuple[str, int, str]]]:
     return best, ranked
 
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# FEEDBACK & LEARNING (v2)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+_DATA_DIR = Path(os.path.expanduser("~/.aiox/ai-route"))
+_FEEDBACK_LOG = _DATA_DIR / "feedback.jsonl"
+_ROUTING_LOG = _DATA_DIR / "routing_history.jsonl"
+_CLASSIFIER_PROMPT = Path(__file__).parent / "classifier_prompt.txt"
+
+
+def _load_classifier_prompt() -> str:
+    """Load classifier prompt from file, with fallback to inline default."""
+    if _CLASSIFIER_PROMPT.exists():
+        return _CLASSIFIER_PROMPT.read_text().strip()
+    return (
+        f"You are an AI CLI agent router. Given a developer query, "
+        f"choose the best agent from: {list(AGENTS.keys())}. "
+        f"Reply with ONLY the agent name, nothing else."
+    )
+
+
+def _log_routing(query: str, agent: str, method: str) -> None:
+    """Log every routing decision for learning loop."""
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "query": query,
+        "agent": agent,
+        "method": method,
+    }
+    with open(_ROUTING_LOG, "a") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def record_feedback(quality: str, query: str = None, agent: str = None) -> None:
+    """Record feedback (good/bad) for the most recent or specified routing.
+
+    Args:
+        quality: "good" or "bad"
+        query: Optional query to match (if None, uses last routing)
+        agent: Optional agent override (if None, uses the routed agent)
+    """
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    # If no query specified, find the last routing
+    if query is None and _ROUTING_LOG.exists():
+        last_line = None
+        with open(_ROUTING_LOG) as f:
+            for line in f:
+                if line.strip():
+                    last_line = line.strip()
+        if last_line:
+            last = json.loads(last_line)
+            query = last["query"]
+            agent = agent or last["agent"]
+
+    if not query:
+        print("  No routing history found. Use --query to specify.")
+        return
+
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "query": query,
+        "agent": agent or "unknown",
+        "quality": quality,
+    }
+    with open(_FEEDBACK_LOG, "a") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    print(f"  Feedback recorded: {quality} for {agent or 'last'}")
+
+
+def _build_feedback_context() -> str:
+    """Build feedback context string for LLM prompt augmentation."""
+    if not _FEEDBACK_LOG.exists():
+        return ""
+
+    good_agents: dict[str, list[str]] = {}
+    bad_agents: dict[str, list[str]] = {}
+
+    with open(_FEEDBACK_LOG) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                d = json.loads(line)
+                agent = d.get("agent", "")
+                query = d.get("query", "")[:80]
+                if d.get("quality") == "good":
+                    good_agents.setdefault(agent, []).append(query)
+                elif d.get("quality") == "bad":
+                    bad_agents.setdefault(agent, []).append(query)
+            except json.JSONDecodeError:
+                continue
+
+    if not good_agents and not bad_agents:
+        return ""
+
+    parts = ["\n\nLearned routing preferences from user feedback:"]
+    for agent, queries in good_agents.items():
+        samples = queries[-3:]  # last 3
+        parts.append(f"  GOOD for {agent}: {'; '.join(samples)}")
+    for agent, queries in bad_agents.items():
+        samples = queries[-3:]
+        parts.append(f"  BAD for {agent} (avoid for similar): {'; '.join(samples)}")
+
+    return "\n".join(parts)
+
+
+def classify_with_llm(query: str) -> tuple[str, list[tuple[str, int, str]]]:
+    """Classifica query via LLM leve (v2: with feedback context)."""
+    try:
+        client = OpenAI(base_url="http://localhost:20128/v1", api_key="x")
+        prompt = _load_classifier_prompt()
+        feedback_ctx = _build_feedback_context()
+        if feedback_ctx:
+            prompt += feedback_ctx
+
+        response = client.chat.completions.create(
+            model="groq/qwen/qwen3-32b",
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": query},
+            ],
+            max_tokens=20,
+            temperature=0,
+        )
+        raw = response.choices[0].message.content.strip().lower()
+        # Strip thinking tags if present (Qwen3 sometimes wraps in <think>)
+        agent = re.sub(r"</?think[^>]*>", "", raw).strip()
+        if agent in AGENTS:
+            return agent, [(agent, 100, "LLM classification (v2)")]
+        # Try partial match
+        for name in AGENTS:
+            if name in agent:
+                return name, [(name, 100, "LLM classification (v2, partial)")]
+        # Fallback to regex scoring
+        return classify(query)
+    except Exception:
+        return classify(query)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# LOCAL CLASSIFIER (v3)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+_LOCAL_MODEL = os.environ.get("AI_ROUTE_LOCAL_MODEL", "qwen3:8b")
+_TRAINING_DATA = _DATA_DIR / "training_data.jsonl"
+
+
+def classify_with_local(query: str) -> tuple[str, list[tuple[str, int, str]]]:
+    """Classify using local Ollama model (v3: fine-tuned or prompted)."""
+    try:
+        client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
+        prompt = _load_classifier_prompt()
+        feedback_ctx = _build_feedback_context()
+        if feedback_ctx:
+            prompt += feedback_ctx
+
+        response = client.chat.completions.create(
+            model=_LOCAL_MODEL,
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": query},
+            ],
+            max_tokens=20,
+            temperature=0,
+        )
+        raw = response.choices[0].message.content.strip().lower()
+        agent = re.sub(r"</?think[^>]*>", "", raw).strip()
+        if agent in AGENTS:
+            return agent, [(agent, 100, "local classification (v3)")]
+        for name in AGENTS:
+            if name in agent:
+                return name, [(name, 100, "local classification (v3, partial)")]
+        return classify(query)
+    except Exception:
+        return classify(query)
+
+
+def export_training_data() -> None:
+    """Export feedback + routing history as training data for fine-tuning.
+
+    Format: JSONL with {"messages": [{"role": "system", ...}, {"role": "user", ...}, {"role": "assistant", ...}]}
+    Only includes entries with positive feedback.
+    """
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Build set of (query, agent) pairs with good feedback
+    good_pairs: dict[str, str] = {}
+    if _FEEDBACK_LOG.exists():
+        with open(_FEEDBACK_LOG) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    d = json.loads(line)
+                    if d.get("quality") == "good":
+                        good_pairs[d["query"]] = d["agent"]
+                except json.JSONDecodeError:
+                    continue
+
+    if not good_pairs:
+        print("  No positive feedback found. Route some queries and use --feedback good first.")
+        return
+
+    prompt = _load_classifier_prompt()
+    count = 0
+
+    with open(_TRAINING_DATA, "w") as f:
+        for query, agent in good_pairs.items():
+            entry = {
+                "messages": [
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": query},
+                    {"role": "assistant", "content": agent},
+                ]
+            }
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            count += 1
+
+    print(f"  Exported {count} training examples to {_TRAINING_DATA}")
+    print(f"  Fine-tune with: ollama create ai-route-classifier -f Modelfile")
+    print(f"  Modelfile example:")
+    print(f'    FROM {_LOCAL_MODEL}')
+    print(f'    ADAPTER {_TRAINING_DATA}')
+
+
+def show_stats() -> None:
+    """Show routing statistics from history and feedback."""
+    print("\n  AI Route — Routing Statistics\n")
+
+    # Routing history stats
+    if _ROUTING_LOG.exists():
+        methods: dict[str, int] = {}
+        agents: dict[str, int] = {}
+        total = 0
+        with open(_ROUTING_LOG) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    d = json.loads(line)
+                    methods[d.get("method", "?")] = methods.get(d.get("method", "?"), 0) + 1
+                    agents[d.get("agent", "?")] = agents.get(d.get("agent", "?"), 0) + 1
+                    total += 1
+                except json.JSONDecodeError:
+                    continue
+
+        print(f"  Total routings: {total}")
+        print(f"  By method:")
+        for m, c in sorted(methods.items(), key=lambda x: -x[1]):
+            print(f"    {m:<20} {c:>5} ({c/total*100:.0f}%)")
+        print(f"  By agent:")
+        for a, c in sorted(agents.items(), key=lambda x: -x[1]):
+            print(f"    {a:<20} {c:>5} ({c/total*100:.0f}%)")
+    else:
+        print("  No routing history yet.")
+
+    # Feedback stats
+    if _FEEDBACK_LOG.exists():
+        good = bad = 0
+        with open(_FEEDBACK_LOG) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    d = json.loads(line.strip())
+                    if d.get("quality") == "good":
+                        good += 1
+                    elif d.get("quality") == "bad":
+                        bad += 1
+                except json.JSONDecodeError:
+                    continue
+        total_fb = good + bad
+        print(f"\n  Feedback: {good} good, {bad} bad ({good/total_fb*100:.0f}% positive)" if total_fb else "\n  No feedback yet.")
+    else:
+        print("\n  No feedback yet.")
+    print()
+
+
 def show_list():
     print("\n  AI Route — Agents Disponíveis\n")
     for name, info in AGENTS.items():
@@ -218,13 +513,53 @@ def main():
         show_cost()
         return
 
+    if args[0] == "--stats":
+        show_stats()
+        return
+
+    if args[0] == "--train":
+        export_training_data()
+        return
+
+    if args[0] == "--feedback":
+        quality = args[1] if len(args) > 1 else "good"
+        query_override = None
+        if "--query" in args:
+            qi = args.index("--query")
+            query_override = args[qi + 1] if qi + 1 < len(args) else None
+        record_feedback(quality, query=query_override)
+        return
+
     dry_run = False
-    if args[0] == "--dry":
-        dry_run = True
-        args = args[1:]
+    smart = False
+    local = False
+    while args and args[0].startswith("--"):
+        if args[0] == "--dry":
+            dry_run = True
+            args = args[1:]
+        elif args[0] == "--smart":
+            smart = True
+            args = args[1:]
+        elif args[0] == "--local":
+            local = True
+            args = args[1:]
+        else:
+            break
 
     query = " ".join(args)
-    best, ranked = classify(query)
+
+    if local:
+        best, ranked = classify_with_local(query)
+        method = "local"
+    elif smart:
+        best, ranked = classify_with_llm(query)
+        method = "smart"
+    else:
+        best, ranked = classify(query)
+        method = "regex"
+
+    # Log routing decision for learning loop
+    _log_routing(query, best, method)
     agent = AGENTS[best]
 
     # Display routing decision
