@@ -7,3 +7,4 @@ include CHANGELOG.md
 include FAQ.md
 include config.example.yaml
 recursive-include ai_route *.py
+recursive-include ai_route *.txt

@@ -38,4 +38,4 @@ ai-route = "ai_route:main"
 packages = ["ai_route"]
 
 [tool.setuptools.package-data]
-ai_route = ["*.yaml"]
+ai_route = ["*.yaml", "*.txt"]
