@@ -7,6 +7,8 @@ para CLI agents.
 
 import re
 import shutil
+import urllib.request
+from pathlib import Path
 from typing import Tuple, List
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -86,7 +88,46 @@ AGENTS = {
         "strengths": ["offline", "private", "general chat", "no internet"],
         "desc": "Ollama local — 100% offline, privado",
     },
+    "aider-omni": {
+        "cmd": ["bash", "~/.aiox/scripts/aider-omniroute.sh", "--message"],
+        "binary": "aider",
+        "tier": "free",
+        "cost": "$",
+        "speed": "fast",
+        "strengths": ["358 models", "fallback", "any model", "omniroute"],
+        "desc": "Aider via OmniRoute — 358 modelos, fallback automático",
+    },
+    "symbiont": {
+        "cmd": ["python3", str(Path.home() / ".aiox/tools/a2a_symbiont.py"), "--send", "route"],
+        "binary": "python3",
+        "tier": "premium",
+        "cost": "$$$",
+        "speed": "medium",
+        "strengths": ["meta-orchestration", "multi-agent", "a2a-protocol", "routing", "escalation"],
+        "desc": "SYMBIONT via A2A — meta-orquestrador, roteamento inteligente multi-agente",
+    },
 }
+
+
+OMNIROUTE_URL = "http://localhost:20128"
+
+
+def check_omniroute_health() -> dict | None:
+    """Check OmniRoute availability and return model count, or None if down."""
+    try:
+        req = urllib.request.Request(
+            f"{OMNIROUTE_URL}/v1/models",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            if resp.status == 200:
+                import json
+                data = json.loads(resp.read())
+                models = data.get("data", [])
+                return {"status": "ok", "model_count": len(models)}
+    except Exception:
+        pass
+    return None
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # CLASSIFICATION RULES (scored, not keyword-only)
@@ -111,7 +152,8 @@ RULES = [
     (r"\b(renomear?|rename|extrair?|extract|mover?|move)\b.*\b(fun[cç]|class|method|vari[aá]vel|variable)\b", "aider-groq", 15, "simple refactor"),
 
     # Complex refactor
-    (r"\b(refator|refactor).*\b(comple[xt]|inteiro|entire|total|full|all)\b", "aider-or", 25, "complex refactor"),
+    (r"\b(refator|refactor).*\b(comple[xt]|inteiro|entire|total|full|all|todo|toda|m[oó]dulo|module|m[uú]ltiplos? arquivos?|multiple files?)\b", "aider-or", 25, "complex refactor"),
+    (r"\b(migra|migrar|migration|migrate).*\b(m[oó]dulo|module|auth|autentica[cç][aã]o|database|banco|api)\b", "aider-or", 25, "module migration"),
     (r"\b(reescrev|rewrite|reestrutur|restructure)\b", "aider-or", 20, "rewrite/restructure"),
 
     # Exploration / understanding
@@ -125,6 +167,19 @@ RULES = [
 
     # Offline / privacy
     (r"\b(offline|sem internet|privado|private|local|confidencial|confidential|sensivel|sensitive)\b", "ollama", 30, "offline/privacy required"),
+
+    # Offline / SYMBIONT — meta-orquestração, multi-agente, A2A
+    (r"\b(symbiont|a2a.protocol)\b", "symbiont", 45, "meta-orchestration task"),
+    (r"meta.?orquestra", "symbiont", 45, "meta-orchestration keyword"),
+    (r"meta.?orchestrat", "symbiont", 45, "meta-orchestration keyword"),
+    (r"\b(melhor agente|best agent|qual agente|which agent|auto.?dispatch)\b", "symbiont", 35, "routing decision"),
+    (r"\b(paralelo|simultane|concomitant).*(agent|agente|model|modelo|revis)\b", "symbiont", 30, "parallel agent task"),
+    (r"\b(escal[ae]|handoff|transfer).*(agente|agent|claude|codex|aider)\b", "symbiont", 30, "agent escalation"),
+    (r"\b(orquestra[cç]|orchestrat).*(agente|agent|multi|modelo|model|revis)\b", "symbiont", 35, "agent orchestration"),
+    (r"\b\d+\s*(agentes?|agents?)\b", "symbiont", 35, "multi-agent task"),
+    (r"\borquestra[r]?\b.*\bagentes?\b", "symbiont", 35, "orchestrate agents"),
+    (r"\bconsensus\b.*(arquitetura|architect|design|decisão|decision|tecnologi)", "symbiont", 40, "consensus on architecture"),
+    (r"\b(consenso|consensus)\b.*(modelo|model|agent|agente|multi)", "symbiont", 40, "consensus multi-model"),
 ]
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -165,6 +220,14 @@ def classify(query: str) -> Tuple[str, List[Tuple[str, int, str]]]:
     if re.search(r"\b\w+\.(py|js|ts|tsx|jsx|rs|go|java|rb|cpp|c|h)\b", query):
         scores["aider-groq"] += 15
         reasons["aider-groq"].append("file reference detected")
+
+    # OmniRoute boost: if available, prefer aider-omni over aider-groq for code tasks
+    omniroute_status = check_omniroute_health()
+    if omniroute_status and scores.get("aider-groq", 0) > 0:
+        scores["aider-omni"] = scores["aider-groq"] + 5
+        reasons["aider-omni"] = reasons.get("aider-groq", []) + [
+            f"OmniRoute available ({omniroute_status['model_count']} models, fallback)"
+        ]
 
     # Default: if no strong signal, use aider-groq (fast, free, good enough)
     max_score = max(scores.values())
