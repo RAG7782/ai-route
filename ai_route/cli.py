@@ -291,20 +291,20 @@ def show_stats() -> None:
 
 def print_routing(best: str, ranked: list[tuple[str, int, str]], dry: bool = False, query: str = "") -> None:
     agent = AGENTS[best]
-    print(f"\n  \033[36m{'━' * 50}\033[0m")
-    print(f"  \033[1mAI Route\033[0m → \033[1;32m{best}\033[0m  {agent['cost']}  ({agent['speed']})")
-    print(f"  \033[2m{agent['desc']}\033[0m")
+    print(f"\n  \033[1;96m{'━' * 50}\033[0m")
+    print(f"  \033[1;97mAI Route\033[0m → \033[1;92m{best}\033[0m  {agent['cost']}  ({agent['speed']})")
+    print(f"  \033[97m{agent['desc']}\033[0m")
 
     if len(ranked) > 1:
-        print("\n  \033[2mScoring:\033[0m")
+        print("\n  \033[1;97mScoring:\033[0m")
         for name, score, reason in ranked[:4]:
-            marker = " \033[32m>\033[0m" if name == best else "  "
-            print(f"  {marker} {name:<14} {score:>3}pts  \033[2m{reason}\033[0m")
-    print(f"  \033[36m{'━' * 50}\033[0m\n")
+            marker = " \033[1;92m>\033[0m" if name == best else "  "
+            print(f"  {marker} \033[97m{name:<14}\033[0m {score:>3}pts  \033[93m{reason}\033[0m")
+    print(f"  \033[1;96m{'━' * 50}\033[0m\n")
 
     if dry:
         cmd = " ".join(agent["cmd"]) if isinstance(agent["cmd"], list) else str(agent["cmd"])
-        print(f"  \033[2mComando: {cmd} \"{query or '<query>'}\"\033[0m\n")
+        print(f"  \033[96mComando: {cmd} \"{query or '<query>'}\"\033[0m\n")
 
 
 def _prompt_feedback(query: str, agent: str) -> None:
@@ -312,7 +312,11 @@ def _prompt_feedback(query: str, agent: str) -> None:
     try:
         if not sys.stdin.isatty():
             return
-        answer = input(f"  \033[2mFeedback: roteamento para '{agent}' foi bom? [y/n/skip] \033[0m").strip().lower()
+        try:
+            import readline  # noqa: F401 — enables arrow keys / history in input()
+        except ImportError:
+            pass
+        answer = input(f"  \033[1;97mFeedback:\033[0m roteamento para '\033[1;92m{agent}\033[0m' foi bom? \033[93m[y/n/skip]\033[0m ").strip().lower()
         if answer in {"y", "yes", "s", "sim"}:
             record_feedback("good", query=query, agent=agent)
         elif answer in {"n", "no", "nao", "não"}:
@@ -328,14 +332,22 @@ def execute_agent(best: str, query: str) -> None:
     if best == "claude":
         os.execvp("claude", ["claude", "-p", query])
     if best.startswith("aider"):
-        script = "aider-groq" if best == "aider-groq" else "aider-or"
+        home = str(Path.home())
+        _aider_scripts = {
+            "aider-groq": f"{home}/.aiox/scripts/aider-groq.sh",
+            "aider-or":   f"{home}/.aiox/scripts/aider-openrouter.sh",
+            "aider-omni": f"{home}/.aiox/scripts/aider-omniroute.sh",
+            "aider-cloud": f"{home}/.aiox/scripts/aider-eclipse-cloud.sh",
+            "aider-local": f"{home}/.aiox/scripts/aider-eclipse-local.sh",
+        }
+        script = _aider_scripts.get(best, _aider_scripts["aider-groq"])
         files = re.findall(r"\b(\S+\.(?:py|js|ts|tsx|jsx|rs|go|java|rb|cpp|c|h))\b", query)
         if files:
-            cmd = f"source ~/.zshrc 2>/dev/null; {script} {' '.join(files)} --message \"{query}\""
+            cmd = f"bash {script} {' '.join(files)} --message \"{query}\""
         else:
-            print("  \033[33mDica:\033[0m Aider funciona melhor com arquivos. Exemplo:")
+            print("  \033[1;93mDica:\033[0m Aider funciona melhor com arquivos. Exemplo:")
             print(f"  ai-route \"refatora {best} arquivo.py\"\n")
-            cmd = f"source ~/.zshrc 2>/dev/null; {script} --message \"{query}\""
+            cmd = f"bash {script} --message \"{query}\""
         os.execvp("bash", ["bash", "-c", cmd])
     if best == "opencode":
         os.execvp("opencode", ["opencode"])
@@ -411,6 +423,6 @@ def main(argv: list[str] | None = None) -> None:
     print_routing(best, ranked, dry=dry_run, query=query)
 
     if dry_run:
-        _prompt_feedback(query, best)
-    else:
-        execute_agent(best, query)
+        return
+    execute_agent(best, query)
+    _prompt_feedback(query, best)

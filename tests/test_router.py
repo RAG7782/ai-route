@@ -28,6 +28,11 @@ class TestClassify:
         best, _ = classify("rewrite and restructure the entire codebase to TypeScript strict")
         assert best == "aider-or"
 
+    def test_portuguese_module_refactor_routes_to_aider_or(self):
+        """Refatoração de módulo/múltiplos arquivos deve rotear para aider-or."""
+        best, _ = classify("refatora o módulo de auth para usar JWT em múltiplos arquivos")
+        assert best == "aider-or"
+
     def test_explanation_routes_to_gemini(self):
         """Explicações devem rotear para gemini."""
         best, _ = classify("explique como funciona o algoritmo de ordenação")
@@ -75,7 +80,8 @@ class TestClassify:
         """Todos os agents devem estar no registry."""
         expected_agents = {
             "claude", "aider-groq", "aider-or", "opencode",
-            "gemini", "codex", "copilot", "ollama"
+            "gemini", "codex", "copilot", "ollama",
+            "aider-omni", "symbiont",
         }
         assert set(AGENTS.keys()) == expected_agents
 
