@@ -33,6 +33,8 @@ Uso:
 """
 
 _LOCAL_MODEL = os.environ.get("AI_ROUTE_LOCAL_MODEL", "qwen3:8b")
+_SMART_TIMEOUT = float(os.environ.get("AI_ROUTE_SMART_TIMEOUT", "3"))
+_LOCAL_TIMEOUT = float(os.environ.get("AI_ROUTE_LOCAL_TIMEOUT", "5"))
 _DEFAULT_DATA_DIR = Path(os.environ.get("AI_ROUTE_DATA_DIR", "~/.aiox/ai-route")).expanduser()
 _FEEDBACK_LOG = _DEFAULT_DATA_DIR / "feedback.jsonl"
 _ROUTING_LOG = _DEFAULT_DATA_DIR / "routing_history.jsonl"
@@ -143,6 +145,7 @@ def _classify_with_openai_compatible(
     api_key: str,
     model: str,
     reason: str,
+    timeout: float,
 ) -> tuple[str, list[tuple[str, int, str]]]:
     try:
         from openai import OpenAI
@@ -151,7 +154,7 @@ def _classify_with_openai_compatible(
 
     try:
         prompt = _load_classifier_prompt() + _build_feedback_context()
-        client = OpenAI(base_url=base_url, api_key=api_key)
+        client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout)
         response = client.chat.completions.create(
             model=model,
             messages=[
@@ -161,16 +164,42 @@ def _classify_with_openai_compatible(
             max_tokens=20,
             temperature=0,
         )
-        raw = response.choices[0].message.content.strip().lower()
-        agent = re.sub(r"</?think[^>]*>", "", raw).strip()
+        raw = response.choices[0].message.content or ""
+        agent = _parse_agent_name(raw)
         if agent in AGENTS:
+            override = _policy_override(query, agent)
+            if override and override != agent:
+                return override, [
+                    (override, 100, "policy override"),
+                    (agent, 80, reason),
+                ]
             return agent, [(agent, 100, reason)]
-        for name in AGENTS:
-            if name in agent:
-                return name, [(name, 100, f"{reason}, partial")]
     except Exception:
         pass
     return classify(query)
+
+
+def _parse_agent_name(raw: str) -> str:
+    """Extract one valid agent name from a model response."""
+    text = re.sub(r"<think>.*?</think>", "", raw, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"</?think[^>]*>", "", text, flags=re.IGNORECASE)
+    text = text.strip().lower()
+    text = re.sub(r"^`+|`+$", "", text).strip()
+    if text in AGENTS:
+        return text
+
+    tokens = re.findall(r"[a-z]+(?:-[a-z]+)?", text)
+    matches = [token for token in tokens if token in AGENTS]
+    return matches[0] if len(matches) == 1 else ""
+
+
+def _policy_override(query: str, agent: str) -> str:
+    """Keep high-confidence local rules above the LLM classifier."""
+    regex_agent, ranked = classify(query)
+    top_score = ranked[0][1] if ranked else 0
+    if top_score >= 25 and regex_agent in {"copilot", "ollama", "aider-or", "claude"}:
+        return regex_agent
+    return agent
 
 
 def classify_with_llm(query: str) -> tuple[str, list[tuple[str, int, str]]]:
@@ -180,6 +209,7 @@ def classify_with_llm(query: str) -> tuple[str, list[tuple[str, int, str]]]:
         api_key=os.environ.get("AI_ROUTE_SMART_API_KEY", "x"),
         model=os.environ.get("AI_ROUTE_SMART_MODEL", "groq/qwen/qwen3-32b"),
         reason="LLM classification",
+        timeout=_SMART_TIMEOUT,
     )
 
 
@@ -190,6 +220,7 @@ def classify_with_local(query: str) -> tuple[str, list[tuple[str, int, str]]]:
         api_key=os.environ.get("AI_ROUTE_LOCAL_API_KEY", "ollama"),
         model=_LOCAL_MODEL,
         reason="local classification",
+        timeout=_LOCAL_TIMEOUT,
     )
 
 
@@ -274,6 +305,20 @@ def print_routing(best: str, ranked: list[tuple[str, int, str]], dry: bool = Fal
     if dry:
         cmd = " ".join(agent["cmd"]) if isinstance(agent["cmd"], list) else str(agent["cmd"])
         print(f"  \033[2mComando: {cmd} \"{query or '<query>'}\"\033[0m\n")
+
+
+def _prompt_feedback(query: str, agent: str) -> None:
+    """Ask user for feedback on the last routing decision (non-blocking)."""
+    try:
+        if not sys.stdin.isatty():
+            return
+        answer = input(f"  \033[2mFeedback: roteamento para '{agent}' foi bom? [y/n/skip] \033[0m").strip().lower()
+        if answer in {"y", "yes", "s", "sim"}:
+            record_feedback("good", query=query, agent=agent)
+        elif answer in {"n", "no", "nao", "não"}:
+            record_feedback("bad", query=query, agent=agent)
+    except (EOFError, KeyboardInterrupt):
+        pass
 
 
 def execute_agent(best: str, query: str) -> None:
@@ -365,6 +410,7 @@ def main(argv: list[str] | None = None) -> None:
     _log_routing(query, best, method)
     print_routing(best, ranked, dry=dry_run, query=query)
 
-    if not dry_run:
+    if dry_run:
+        _prompt_feedback(query, best)
+    else:
         execute_agent(best, query)
-
