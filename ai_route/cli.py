@@ -343,12 +343,12 @@ def execute_agent(best: str, query: str) -> None:
         script = _aider_scripts.get(best, _aider_scripts["aider-groq"])
         files = re.findall(r"\b(\S+\.(?:py|js|ts|tsx|jsx|rs|go|java|rb|cpp|c|h))\b", query)
         if files:
-            cmd = f"bash {script} {' '.join(files)} --message \"{query}\""
+            args_list = ["bash", script] + files + ["--message", query]
         else:
             print("  \033[1;93mDica:\033[0m Aider funciona melhor com arquivos. Exemplo:")
             print(f"  ai-route \"refatora {best} arquivo.py\"\n")
-            cmd = f"bash {script} --message \"{query}\""
-        os.execvp("bash", ["bash", "-c", cmd])
+            args_list = ["bash", script, "--message", query]
+        os.execvp("bash", args_list)
     if best == "opencode":
         os.execvp("opencode", ["opencode"])
     if best == "gemini":
