@@ -5,6 +5,13 @@ import pytest
 from ai_route.router import classify, AGENTS, get_agent
 
 
+@pytest.fixture(autouse=True)
+def no_omniroute(monkeypatch):
+    """Neutralize OmniRoute health check so routing is deterministic in tests."""
+    import ai_route.router as router_mod
+    monkeypatch.setattr(router_mod, "check_omniroute_health", lambda: None)
+
+
 class TestClassify:
     """Testes da função classify."""
 

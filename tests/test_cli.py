@@ -30,6 +30,9 @@ def test_dry_run_does_not_require_writable_home(tmp_path, monkeypatch, capsys):
 def test_feedback_and_stats_use_data_dir(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr("ai_route.cli._FEEDBACK_LOG", tmp_path / "feedback.jsonl")
     monkeypatch.setattr("ai_route.cli._ROUTING_LOG", tmp_path / "routing_history.jsonl")
+    # Neutralize OmniRoute so routing is deterministic regardless of local services.
+    import ai_route.router as router_mod
+    monkeypatch.setattr(router_mod, "check_omniroute_health", lambda: None)
 
     main(["--dry", "corrige o bug no arquivo main.py"])
     main(["--feedback", "good"])

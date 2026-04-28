@@ -223,11 +223,12 @@ def classify(query: str) -> Tuple[str, List[Tuple[str, int, str]]]:
         scores["aider-groq"] += 15
         reasons["aider-groq"].append("file reference detected")
 
-    # OmniRoute boost: if available, prefer aider-omni over aider-groq for code tasks
+    # OmniRoute boost: prefer aider-omni for complex tasks only (aider-or score > 0 signals
+    # complexity; quick fixes stay with aider-groq for speed).
     omniroute_status = check_omniroute_health()
-    if omniroute_status and scores.get("aider-groq", 0) > 0:
-        scores["aider-omni"] = scores["aider-groq"] + 5
-        reasons["aider-omni"] = reasons.get("aider-groq", []) + [
+    if omniroute_status and scores.get("aider-or", 0) > 0:
+        scores["aider-omni"] = max(scores.get("aider-omni", 0), scores["aider-or"] + 5)
+        reasons["aider-omni"] = reasons.get("aider-or", []) + [
             f"OmniRoute available ({omniroute_status['model_count']} models, fallback)"
         ]
 
