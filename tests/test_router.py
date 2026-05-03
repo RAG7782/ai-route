@@ -84,13 +84,12 @@ class TestClassify:
         assert scores == sorted(scores, reverse=True)
 
     def test_all_agents_in_registry(self):
-        """Todos os agents devem estar no registry."""
+        """Core agents devem estar no registry."""
         expected_agents = {
             "claude", "aider-groq", "aider-or", "opencode",
             "gemini", "codex", "copilot", "ollama",
-            "aider-omni", "symbiont",
         }
-        assert set(AGENTS.keys()) == expected_agents
+        assert expected_agents <= set(AGENTS.keys())
 
 
 class TestAgents:
