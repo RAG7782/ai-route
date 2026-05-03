@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 AI Route - Módulo de Roteamento
 
@@ -7,11 +5,12 @@ Contém a lógica principal de classificação e roteamento de queries
 para CLI agents.
 """
 
+from __future__ import annotations
+
 import re
 import shutil
 import urllib.request
 from pathlib import Path
-from typing import Tuple, List
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # AGENT REGISTRY
@@ -188,7 +187,7 @@ RULES = [
 # SCORING ENGINE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-def classify(query: str) -> Tuple[str, List[Tuple[str, int, str]]]:
+def classify(query: str) -> tuple[str, list[tuple[str, int, str]]]:
     """
     Score each agent and return (best_agent, [(agent, score, reasons)])
 

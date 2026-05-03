@@ -10,12 +10,11 @@ import json
 import os
 import re
 import sys
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
 
 from .router import AGENTS, classify, show_cost, show_list
-
 
 HELP = """AI Route — Roteador Inteligente de CLI Agents
 
@@ -326,7 +325,6 @@ def _prompt_feedback(query: str, agent: str) -> None:
 
 
 def execute_agent(best: str, query: str) -> None:
-    agent = AGENTS[best]
     if best == "copilot":
         os.execvp("gh", ["gh", "copilot", "suggest", "-t", "shell", query])
     if best == "claude":

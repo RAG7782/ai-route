@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import sys
+from types import SimpleNamespace
 
-from ai_route.cli import main
-from ai_route.cli import _parse_agent_name
+from ai_route.cli import _parse_agent_name, main
 
 
 def test_entrypoint_help(capsys):
@@ -92,7 +93,7 @@ def test_smart_falls_back_on_invalid_llm_response(monkeypatch, capsys):
         def __init__(self, **_kwargs):
             self.chat = FakeChat()
 
-    monkeypatch.setattr("openai.OpenAI", FakeClient)
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeClient))
 
     main(["--smart", "--dry", "explique como funciona o algoritmo"])
 

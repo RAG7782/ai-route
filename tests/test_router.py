@@ -2,7 +2,7 @@
 
 import pytest
 
-from ai_route.router import classify, AGENTS, get_agent
+from ai_route.router import AGENTS, classify, get_agent
 
 
 @pytest.fixture(autouse=True)
