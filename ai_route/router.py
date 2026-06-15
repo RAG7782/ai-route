@@ -107,6 +107,18 @@ AGENTS = {
         "strengths": ["meta-orchestration", "multi-agent", "a2a-protocol", "routing", "escalation"],
         "desc": "SYMBIONT via A2A — meta-orquestrador, roteamento inteligente multi-agente",
     },
+    "datajud": {
+        # Data API (não-LLM): busca processual real nos tribunais via CNJ.
+        # NÃO vai p/ OmniRoute/LiteLLM (que falam Chat Completions); vive na
+        # camada de integração ~/.aiox/integrations/datajud_client.py.
+        "cmd": ["python3", str(Path.home() / ".aiox/integrations/datajud_client.py"), "search"],
+        "binary": "python3",
+        "tier": "free",
+        "cost": "0",
+        "speed": "fast",
+        "strengths": ["jurisprudência", "processos", "tribunais", "CNJ", "dados reais", "consulta processual"],
+        "desc": "DataJud CNJ — API pública/gratuita: busca processos reais nos tribunais",
+    },
 }
 
 
@@ -146,6 +158,12 @@ RULES = [
     (r"\b(MCP|memory|IMI|ClawVault|Qdrant|Supabase|n8n)\b", "claude", 35, "needs MCP tools"),
     (r"\b(analise cr[ií]tica|racioc[ií]nio|reason|think.*step|chain.?of.?thought)\b", "claude", 20, "deep reasoning"),
     (r"\b(jurid|tribut|CARF|STF|STJ|jurisprud|OAB|penal|civil|trabalhist|ICMS|ISS|IPVA|ADI|ementa|ac[oó]rd[aã]o)\b", "claude", 40, "legal domain (needs context)"),
+
+    # Consulta processual REAL — DataJud (dados, não opinião). Boost > legal-claude
+    # porque LLM alucinaria nº de processo; DataJud retorna dado verificável (G6).
+    (r"\b(buscar?|consultar?|pesquisar?|listar?|encontrar?|search|find).{0,40}\b(processos?|jurisprud[eê]ncia|decis[oõ]es?|ac[oó]rd[aã]os?|andamentos?|movimenta[cç][aã]o)\b", "datajud", 50, "consulta processual real (DataJud)"),
+    (r"\b(datajud|cnj)\b", "datajud", 55, "DataJud/CNJ explícito"),
+    (r"\bprocessos?\b.{0,30}\b(TJSP|TJMG|TJRJ|TJRS|TJBA|TJPR|TJSC|TJDFT|STJ|STF|TST|TRF[1-5]|TRT\d+)\b", "datajud", 50, "processos em tribunal específico"),
 
     # Quick code changes
     (r"\b(fix|corrig|bug|error|typo|ajust|ajeit)\b", "aider-groq", 20, "quick fix"),
